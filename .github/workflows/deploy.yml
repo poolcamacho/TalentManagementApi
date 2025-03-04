@@ -1,0 +1,53 @@
+name: Deploy .NET App to Azure
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  AZURE_WEBAPP_NAME: talentmanagementapi-web
+  AZURE_RESOURCE_GROUP: tecylab-resource-group-central
+  ACR_NAME: talentmanagementacr
+  IMAGE_NAME: talent-management-api
+  PORT: 8080
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to Azure Container Registry
+        run: az acr login --name $ACR_NAME
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and Push Docker Image
+        run: |
+          docker buildx build --platform linux/amd64 --no-cache --push \
+          -t $ACR_NAME.azurecr.io/$IMAGE_NAME:latest \
+          -f TalentManagementApi/Dockerfile .
+
+      - name: Update Azure Web App Configuration
+        run: |
+          az webapp config container set --resource-group $AZURE_RESOURCE_GROUP \
+          --name $AZURE_WEBAPP_NAME \
+          --docker-custom-image-name $ACR_NAME.azurecr.io/$IMAGE_NAME:latest
+          
+      - name: Set Azure Web App Port
+        run: |
+          az webapp config appsettings set --resource-group $AZURE_RESOURCE_GROUP \
+            --name $AZURE_WEBAPP_NAME \
+            --settings WEBSITES_PORT=$PORT
+          
+      - name: Restart Azure Web App
+        run: az webapp restart --resource-group $AZURE_RESOURCE_GROUP --name $AZURE_WEBAPP_NAME
